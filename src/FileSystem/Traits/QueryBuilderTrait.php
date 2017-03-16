@@ -21,7 +21,7 @@ trait QueryBuilderTrait
      */
     protected function buildPattern(string $query): string
     {
-        return array_map(
+        $stack = array_map(
             function(string $char): string {
                 if ( "\\" === $char ) {
                     return '/';
@@ -35,5 +35,7 @@ trait QueryBuilderTrait
             },
             str_split($query)
         );
+
+        return join('', $stack);
     }
 }

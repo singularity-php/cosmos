@@ -25,6 +25,9 @@ class Locator implements LocatorInterface
      */
     private $descriptors;
 
+    /**
+     * @var array
+     */
     private $placeholders = [];
 
     /**
@@ -91,7 +94,7 @@ class Locator implements LocatorInterface
             $this->descriptors->set($current->getScheme(), $current);
         }
     }
-    
+
     /**
      * query command for directory placeholder.
      *

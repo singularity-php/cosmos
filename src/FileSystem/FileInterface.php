@@ -51,9 +51,67 @@ interface FileInterface extends FileSystemEntityInterface
     public function pull();
 
     /**
+     * copies the current file to the new location with an optional alternative file name.
+     *
+     * @param DirectoryInterface $directory
+     * @param string|null $name
+     */
+    public function copy(DirectoryInterface $directory, string $name = null): void;
+
+    /**
+     * renames the current file to the provided new name.
+     *
+     * @param string $newName
+     */
+    public function rename(string $newName): void;
+
+    /**
+     * moves the current file to the new location with an optional alternative file name.
+     *
+     * @param DirectoryInterface $directory
+     * @param string|null $name
+     */
+    public function move(DirectoryInterface $directory, string $name = null): void;
+
+    /**
      * returns the directory interface of the file.
      *
      * @return DirectoryInterface
      */
     public function directory(): DirectoryInterface;
+
+    /**
+     * returns the filename of the current file.
+     *
+     * @return string
+     */
+    public function getFilename(): string;
+
+    /**
+     * returns the basename of the current file.
+     *
+     * @return string
+     */
+    public function getBasename(): string;
+
+    /**
+     * returns the extension of the current file.
+     *
+     * @return string
+     */
+    public function getExtension(): string;
+
+    /**
+     * returns the path to the current file.
+     *
+     * @return string
+     */
+    public function getPath(): string;
+
+    /**
+     * returns the full pathname to the file.
+     *
+     * @return string
+     */
+    public function getPathname(): string;
 }

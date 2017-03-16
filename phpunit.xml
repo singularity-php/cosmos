@@ -1,0 +1,7 @@
+<phpunit bootstrap="mocks/bootstrap.php" beStrictAboutTestsThatDoNotTestAnything="true">
+    <testsuites>
+        <testsuite name="file-system">
+            <directory>tests/FileSystem</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

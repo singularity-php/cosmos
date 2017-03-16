@@ -61,4 +61,11 @@ interface DirectoryInterface extends FileSystemEntityInterface
      * @return FileInterface
      */
     public function file(string $query): FileInterface;
+
+    /**
+     * gets the path of this directory.
+     *
+     * @return string
+     */
+    public function getPath(): string;
 }

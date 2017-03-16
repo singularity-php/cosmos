@@ -12,6 +12,7 @@ namespace Singularity\FileSystem;
 
 
 use Singularity\FileSystem\Exceptions\FileSystemException;
+use Singularity\FileSystem\Traits\PathTrait;
 use Singularity\FileSystem\Traits\QueryBuilderTrait;
 
 /**
@@ -21,6 +22,7 @@ use Singularity\FileSystem\Traits\QueryBuilderTrait;
 class FileSystem implements FileSystemInterface
 {
     use QueryBuilderTrait;
+    use PathTrait;
 
     /**
      * @var
@@ -34,13 +36,18 @@ class FileSystem implements FileSystemInterface
      */
     public function __construct(string $workingDirectory = null)
     {
-        $workingDirectory = $workingDirectory ?? dirname($_SERVER['SCRIPT_FILENAME']);
+        $previsionedDirectory = $this->marshalSubPath($workingDirectory ?? dirname($_SERVER['SCRIPT_FILENAME']));
 
-        if ( ! is_dir($workingDirectory) ) {
+        $baseDirectory = dirname($previsionedDirectory);
+        $name = basename($previsionedDirectory);
+
+        if ( ! is_dir($previsionedDirectory) ) {
             throw new FileSystemException(
                 'provided working directory is not a directory: '.$workingDirectory
             );
         }
+
+        $this->workingDirectory = new Directory($name, $baseDirectory);
     }
 
     /**
@@ -51,18 +58,21 @@ class FileSystem implements FileSystemInterface
      */
     public function find(string $query): ? FileSystemEntityInterface
     {
-        $pattern = $this->buildPattern(ltrim($query, '/\\'));
-        $result = glob($this->workingDirectory.'/'.$pattern, GLOB_BRACE);
+        $pattern = $this->buildPattern(ltrim($this->marshalSubPath($query), '/\\'));
+        $result = glob($this->workingDirectory->getPath().'/'.$pattern, GLOB_BRACE);
 
         if ( empty($result) ) {
             return null;
         }
 
+        $directory = dirname($result[0]);
+        $name = basename($result[0]);
+
         if ( is_dir($result[0]) ) {
-            return new Directory($this->workingDirectory.'/'.$result[0]);
+            return new Directory($name, $directory);
         }
 
-        return new File($this->workingDirectory.'/'.$result[0]);
+        return new File($name, $directory);
     }
 
     /**
@@ -74,21 +84,24 @@ class FileSystem implements FileSystemInterface
      */
     public function directory(string $query): DirectoryInterface
     {
-        $path = $this->workingDirectory.'/'.ltrim($query, '/\\');
+        $path = $this->workingDirectory->getPath().'/'.ltrim($this->marshalSubPath($query), '/\\');
 
         if ( ! is_writeable($path) ) {
             throw new FileSystemException(
-                'Unable to create directory, target is not writable: '.ltrim($query, '/\\')
+                'Unable to create directory, target is not writable: '.$path
             );
         }
 
+        $baseDirectory = dirname($path);
+        $name = basename($path);
+
         if ( is_dir($path) ) {
-            return new Directory($path);
+            return new Directory($name, $baseDirectory);
         }
 
         mkdir($path);
 
-        return new Directory($path);
+        return new Directory($name, $baseDirectory);
     }
 
     /**
@@ -99,10 +112,22 @@ class FileSystem implements FileSystemInterface
      */
     public function file(string $query): FileInterface
     {
-        $directory = dirname($query);
-        $filename = substr($query, strlen($directory) + 1);
+        if ( false !== strpos('/', $query) ) {
+            $directory = dirname($query);
+            $filename = basename($query);
+            return $this->workingDirectory->directory($directory)->file($filename);
+        }
 
-        return $this->directory($directory)->file($filename);
+        return $this->workingDirectory->file($query);
     }
 
+    /**
+     * returns the working directory.
+     *
+     * @return string
+     */
+    public function getPath(): string
+    {
+        return $this->workingDirectory->getPath();
+    }
 }

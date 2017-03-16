@@ -12,17 +12,22 @@ namespace Singularity\FileSystem;
 
 
 use Singularity\FileSystem\Exceptions\FileSystemException;
+use Singularity\FileSystem\Traits\PathTrait;
 use Singularity\FileSystem\Traits\QueryBuilderTrait;
 
 class Directory implements DirectoryInterface
 {
     use QueryBuilderTrait;
+    use PathTrait;
 
     private $path;
+    private $baseDirectory;
 
-    public function __construct(string $path)
+    public function __construct(string $name, string $baseDirectory = null)
     {
-        $this->path = rtrim($path, '/\\');
+        $baseDirectory = $this->marshalSubPath($baseDirectory ?? dirname($_SERVER['SCRIPT_FILENAME']));
+        $this->path = $this->marshalPath($baseDirectory, $name);
+        $this->baseDirectory = $baseDirectory;
     }
 
     /**
@@ -34,13 +39,17 @@ class Directory implements DirectoryInterface
      */
     public function each(string $query, callable $callback): void
     {
-        $pattern = $this->buildPattern(ltrim($query, '/\\'));
+        $pattern = $this->buildPattern(ltrim($this->marshalSubPath($query), '/\\'));
         $result = glob($this->path.'/'.$pattern, GLOB_BRACE);
 
         foreach ( $result as $current ) {
             $pathName = $this->path.'/'.$current;
 
-            $entity = is_file($pathName) ? new File($pathName) : new Directory($pathName);
+            $entity = is_file($pathName)
+                ? new File($pathName, $this->path)
+                : new Directory($pathName, $this->path)
+            ;
+
             $callback($entity);
         }
     }
@@ -53,18 +62,22 @@ class Directory implements DirectoryInterface
      */
     public function find(string $query): ? FileSystemEntityInterface
     {
-        $pattern = $this->buildPattern(ltrim($query, '/\\'));
+        $pattern = $this->buildPattern(ltrim($this->marshalSubPath($query), '/\\'));
         $result = glob($this->path.'/'.$pattern, GLOB_BRACE);
 
         if ( empty($result) ) {
             return null;
         }
 
-        if ( is_dir($result[0]) ) {
-            return new Directory($this->path.'/'.$result[0]);
+        $fullPath = $this->path.'/'.$result[0];
+        $directory = dirname($fullPath);
+        $name = basename($fullPath);
+
+        if ( is_dir($fullPath) ) {
+            return new Directory($name, $directory);
         }
 
-        return new File($this->path.'/'.$result[0]);
+        return new File($name, $directory);
     }
 
     /**
@@ -75,7 +88,7 @@ class Directory implements DirectoryInterface
      */
     public function isDirectory(string $query): bool
     {
-        $pattern = $this->buildPattern(ltrim($query, '/\\'));
+        $pattern = $this->buildPattern(ltrim($this->marshalSubPath($query), '/\\'));
         $result = glob($this->path.'/'.$pattern, GLOB_BRACE);
 
         if ( empty($result) ) {
@@ -93,7 +106,7 @@ class Directory implements DirectoryInterface
      */
     public function isFile(string $query): bool
     {
-        $pattern = $this->buildPattern(ltrim($query, '/\\'));
+        $pattern = $this->buildPattern(ltrim($this->marshalSubPath($query), '/\\'));
         $result = glob($this->path.'/'.$pattern, GLOB_BRACE);
 
         if ( empty($result) ) {
@@ -112,21 +125,21 @@ class Directory implements DirectoryInterface
      */
     public function directory(string $query): DirectoryInterface
     {
-        $path = $this->path.'/'.ltrim($query, '/\\');
+        $path = ltrim($this->marshalSubPath($query), '/\\');
 
-        if ( ! is_writeable($path) ) {
+        if ( ! is_writeable($this->path.'/'.$path) ) {
             throw new FileSystemException(
                 'Unable to create directory, target is not writable: '.ltrim($query, '/\\')
             );
         }
 
-        if ( is_dir($path) ) {
-            return new Directory($path);
+        if ( is_dir($this->path.'/'.$path) ) {
+            return new Directory($path, $this->path);
         }
 
         mkdir($path);
 
-        return new Directory($path);
+        return new Directory($path, $this->path);
     }
 
     /**
@@ -138,7 +151,7 @@ class Directory implements DirectoryInterface
      */
     public function file(string $query): FileInterface
     {
-        $path = $this->path.'/'.ltrim($query, '/\\');
+        $path = ltrim($this->marshalSubPath($query), '/\\');
 
         if ( ! is_writeable($path) ) {
             throw new FileSystemException(
@@ -146,13 +159,19 @@ class Directory implements DirectoryInterface
             );
         }
 
-        if ( is_file($path) ) {
-            return new File($path);
+        if ( is_file($this->path.'/'.$path) ) {
+            return new File($path, $this->path);
         }
 
-        touch($path);
+        if ( false !== strpos($path, '/') ) {
+            $directoryName = dirname($path);
+            $fileName = basename($path);
+            return $this->directory($directoryName)->file($fileName);
+        }
 
-        return new File($path);
+        touch($this->path.'/'.$path);
+
+        return new File($path, $this->path);
     }
 
     /**
@@ -220,6 +239,16 @@ class Directory implements DirectoryInterface
     public function exists(): bool
     {
         return file_exists($this->path);
+    }
+
+    /**
+     * gets the path of this directory.
+     *
+     * @return string
+     */
+    public function getPath(): string
+    {
+        return $this->path;
     }
 
 
