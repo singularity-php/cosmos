@@ -4,3 +4,8 @@ out
 gen
 dev
 vendor
+composer.lock
+.DS_Store
+
+# temp
+tests
