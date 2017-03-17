@@ -11,7 +11,7 @@
 namespace Singularity\FileSystem;
 
 
-interface FileSystemInterface
+interface FileSystemInterface extends PathAwareInterface
 {
     /**
      * returns the file system entity for the provided query.

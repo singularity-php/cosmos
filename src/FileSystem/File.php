@@ -25,11 +25,6 @@ class File implements FileInterface
     /**
      * @var string
      */
-    private $path;
-
-    /**
-     * @var string
-     */
     private $filename;
 
     /**
@@ -43,31 +38,22 @@ class File implements FileInterface
     private $basename;
 
     /**
+     * @var DirectoryInterface
+     */
+    private $directory;
+
+    /**
      * File constructor.
      * @param string $name
-     * @param string $path
+     * @param DirectoryInterface $directory
      * @throws FileSystemException
      */
-    public function __construct(string $name, string $path)
+    public function __construct(string $name, DirectoryInterface $directory)
     {
-        $path = $this->marshalSubPath($path);
-
-        $previsionedPath = $this->marshalPath($path, $name);
-
-        if ( 0 !== strpos($previsionedPath, $path) ) {
-            throw new FileSystemException('File destination out of bounds');
-        }
-
-        $this->path = dirname($previsionedPath);
-        $this->filename = basename($previsionedPath);
-        $this->extension = pathinfo($previsionedPath, PATHINFO_EXTENSION);
-        $this->basename = basename($previsionedPath, $this->extension);
-
-        if ( false === realpath($path) ) {
-            throw new FileSystemException(
-                'unreachable base directory: '.$path
-            );
-        }
+        $this->filename = $name;
+        $this->extension = pathinfo($name, PATHINFO_EXTENSION);
+        $this->basename = basename($name, '.'.$this->extension);
+        $this->directory = $directory;
     }
 
     /**
@@ -102,13 +88,19 @@ class File implements FileInterface
      */
     public function put(string $contents): void
     {
-        if ( ! $this->isWritable() ) {
+        if ( $this->exists() && ! $this->isWritable() ) {
             throw new FileSystemException(
                 'File is immutable: '.$this->filename
             );
         }
 
-        file_put_contents($this->path.'/'.$this->filename, $contents);
+        if ( ! $this->exists() && ! $this->directory->isWritable() ) {
+            throw new FileSystemException(
+                'Directory is immutable: '.$this->directory->getPath()
+            );
+        }
+
+        file_put_contents($this->directory->getPath().'/'.$this->filename, $contents);
     }
 
     /**
@@ -125,7 +117,7 @@ class File implements FileInterface
             );
         }
 
-        return file_get_contents($this->path.'/'.$this->filename);
+        return file_get_contents($this->directory->getPath().'/'.$this->filename);
     }
 
     /**
@@ -142,7 +134,7 @@ class File implements FileInterface
             );
         }
 
-        return include $this->path.'/'.$this->filename;
+        return include $this->directory->getPath().'/'.$this->filename;
     }
 
     /**
@@ -152,7 +144,7 @@ class File implements FileInterface
      */
     public function isReadable(): bool
     {
-        return is_readable($this->path.'/'.$this->filename);
+        return is_readable($this->directory->getPath().'/'.$this->filename);
     }
 
     /**
@@ -162,7 +154,7 @@ class File implements FileInterface
      */
     public function isWritable(): bool
     {
-        return is_writable($this->path.'/'.$this->filename);
+        return is_writable($this->directory->getPath().'/'.$this->filename);
     }
 
     /**
@@ -175,17 +167,17 @@ class File implements FileInterface
     {
         if ( ! $this->isWritable() ) {
             throw new FileSystemException(
-                'File access denied: '.$this->path.'/'.$this->filename
+                'File access denied: '.$this->directory->getPath().'/'.$this->filename
             );
         }
 
         if ( ! $this->exists() ) {
             throw new FileSystemException(
-                'Nothing to delete: '.$this->path.'/'.$this->filename
+                'Nothing to delete: '.$this->directory->getPath().'/'.$this->filename
             );
         }
 
-        unlink($this->path.'/'.$this->filename);
+        unlink($this->directory->getPath().'/'.$this->filename);
     }
 
     /**
@@ -195,7 +187,7 @@ class File implements FileInterface
      */
     public function isLink(): bool
     {
-        return is_link($this->path.'/'.$this->filename);
+        return is_link($this->directory->getPath().'/'.$this->filename);
     }
 
     /**
@@ -205,7 +197,7 @@ class File implements FileInterface
      */
     public function directory(): DirectoryInterface
     {
-        return new Directory(basename($this->path), dirname($this->path));
+        return $this->directory;
     }
 
     /**
@@ -215,7 +207,7 @@ class File implements FileInterface
      */
     public function exists(): bool
     {
-        return file_exists($this->path.'/'.$this->filename);
+        return file_exists($this->directory->getPath().'/'.$this->filename);
     }
 
     /**
@@ -224,8 +216,9 @@ class File implements FileInterface
      * @param DirectoryInterface $directory
      * @throws FileSystemException when the file or directory does not exists
      * @param string|null $name
+     * @return FileInterface
      */
-    public function copy(DirectoryInterface $directory, string $name = null): void
+    public function copy(DirectoryInterface $directory, string $name = null): FileInterface
     {
         if ( ! $this->exists() ) {
             throw new FileSystemException('can not copy not existing files: '.$this->filename);
@@ -243,11 +236,13 @@ class File implements FileInterface
             throw new FileSystemException('name parameter can not contain slashes');
         }
 
-        $done = copy($this->path.'/'.$this->filename, $directory->getPath().($name ?? $this->filename));
+        $done = copy($this->directory->getPath().'/'.$this->filename, $directory->getPath().'/'.($name ?? $this->filename));
 
         if ( ! $done ) {
             throw new FileSystemException('copying failed, probably due to access issues');
         }
+
+        return new File($name ?? $this->filename, $directory);
     }
 
     /**
@@ -263,7 +258,11 @@ class File implements FileInterface
             return;
         }
 
-        $done = rename($this->path.'/'.$this->filename, $this->path.'/'.$newName);
+        if ( false !== strpos(str_replace('\\', '/', $newName), '/') ) {
+            throw new FileSystemException('newName parameter can not contain slashes');
+        }
+
+        $done = rename($this->directory->getPath().'/'.$this->filename, $this->directory->getPath().'/'.$newName);
 
         if ( ! $done ) {
             throw new FileSystemException('renaming failed, probably due to access issues');
@@ -289,11 +288,25 @@ class File implements FileInterface
             throw new FileSystemException('can not move to not existing target directories: '.$directory->getPath());
         }
 
-        $done = rename($this->path.'/'.$this->filename, $directory->getPath().'/'.($name ?? $this->filename));
+        if ( false !== strpos(str_replace('\\', '/', $name), '/') ) {
+            throw new FileSystemException('name parameter can not contain slashes');
+        }
+
+        $name = $name ?? $this->filename;
+
+        $done = rename(
+            $this->getPathname(),
+            $directory->getPath().'/'.$name
+        );
 
         if ( ! $done ) {
             throw new FileSystemException('moving failed, probably due to access issues');
         }
+
+        $this->directory = $directory;
+        $this->filename = $name;
+        $this->extension = pathinfo($name, PATHINFO_EXTENSION);
+        $this->basename = basename($name, '.'.$this->extension);
     }
 
     /**
@@ -333,7 +346,7 @@ class File implements FileInterface
      */
     public function getPath(): string
     {
-        return $this->path;
+        return $this->directory->getPath();
     }
 
     /**
@@ -343,7 +356,7 @@ class File implements FileInterface
      */
     public function getPathname(): string
     {
-        return $this->path.'/'.$this->filename;
+        return $this->directory->getPath().'/'.$this->filename;
     }
 
 }

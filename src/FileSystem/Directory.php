@@ -15,19 +15,51 @@ use Singularity\FileSystem\Exceptions\FileSystemException;
 use Singularity\FileSystem\Traits\PathTrait;
 use Singularity\FileSystem\Traits\QueryBuilderTrait;
 
+/**
+ * Class Directory
+ * @package Singularity\FileSystem
+ */
 class Directory implements DirectoryInterface
 {
     use QueryBuilderTrait;
     use PathTrait;
 
+    /**
+     * @var string
+     */
     private $path;
+    /**
+     * @var string
+     */
     private $baseDirectory;
+    /**
+     * @var string
+     */
+    private $openDirectory;
 
-    public function __construct(string $name, string $baseDirectory = null)
+    /**
+     * Directory constructor.
+     * @param string $name
+     * @param string|null $baseDirectory
+     * @param string|null $openDirectory
+     * @throws FileSystemException
+     */
+    public function __construct(string $name, string $baseDirectory = null, string $openDirectory = null)
     {
         $baseDirectory = $this->marshalSubPath($baseDirectory ?? dirname($_SERVER['SCRIPT_FILENAME']));
         $this->path = $this->marshalPath($baseDirectory, $name);
         $this->baseDirectory = $baseDirectory;
+        $this->openDirectory = realpath($openDirectory);
+
+        if ( null === $openDirectory && ! empty(ini_get('open_basedir')) && is_dir(ini_get('open_basedir')) ) {
+            $this->openDirectory = realpath(ini_get('open_basedir'));
+        }
+        else if ( null === $openDirectory ) {
+            $this->openDirectory = dirname($_SERVER['SCRIPT_FILENAME']);
+        }
+        else if ( false === $this->openDirectory ) {
+            throw new FileSystemException('open base directory is not reachable');
+        }
     }
 
     /**
@@ -43,11 +75,14 @@ class Directory implements DirectoryInterface
         $result = glob($this->path.'/'.$pattern, GLOB_BRACE);
 
         foreach ( $result as $current ) {
-            $pathName = $this->path.'/'.$current;
-
-            $entity = is_file($pathName)
-                ? new File($pathName, $this->path)
-                : new Directory($pathName, $this->path)
+            $entity = is_file($current)
+                ? new File(
+                    basename($current),
+                    dirname($current) !== $this->path
+                        ? new Directory(basename(dirname($current)), dirname(dirname($current)))
+                        : $this
+                )
+                : new Directory(basename($current), dirname($current), $this->openDirectory)
             ;
 
             $callback($entity);
@@ -58,7 +93,7 @@ class Directory implements DirectoryInterface
      * returns the file system entity for the provided query.
      *
      * @param string $query
-     * @return FileSystemEntityInterface|null
+     * @return FileSystemEntityInterface|DirectoryInterface|FileInterface|null
      */
     public function find(string $query): ? FileSystemEntityInterface
     {
@@ -69,15 +104,19 @@ class Directory implements DirectoryInterface
             return null;
         }
 
-        $fullPath = $this->path.'/'.$result[0];
-        $directory = dirname($fullPath);
-        $name = basename($fullPath);
+        $directory = dirname($result[0]);
+        $name = basename($result[0]);
 
-        if ( is_dir($fullPath) ) {
+        if ( is_dir($result[0]) ) {
             return new Directory($name, $directory);
         }
 
-        return new File($name, $directory);
+        return new File(
+            $name,
+            $directory !== $this->path
+                ? new Directory(basename($directory), dirname($directory), $this->openDirectory)
+                : $this
+        );
     }
 
     /**
@@ -117,29 +156,39 @@ class Directory implements DirectoryInterface
     }
 
     /**
-     * enforces the presence of the provided query as a directory.
+     * enforces the presence of the query as a directory when a query is provided. When no query is provided
+     * the parent directory will be returned.
      *
-     * @param string $query
-     * @throws FileSystemException
+     * @param string|null $query
+     * @throws FileSystemException when the current directory is not writable
      * @return DirectoryInterface
      */
-    public function directory(string $query): DirectoryInterface
+    public function directory(string $query = null): DirectoryInterface
     {
+        if ( null === $query && 0 !== strpos($this->baseDirectory, $this->openDirectory) ) {
+            var_dump($this->baseDirectory, $this->openDirectory);
+            throw new FileSystemException('Access denied, directory outside the open base directory');
+        }
+
+        if ( null === $query ) {
+            return new Directory(basename($this->baseDirectory), dirname($this->baseDirectory), $this->openDirectory);
+        }
+
         $path = ltrim($this->marshalSubPath($query), '/\\');
 
-        if ( ! is_writeable($this->path.'/'.$path) ) {
+        if ( ! is_writeable($this->path) && ! is_dir($this->path.'/'.$path) ) {
             throw new FileSystemException(
                 'Unable to create directory, target is not writable: '.ltrim($query, '/\\')
             );
         }
 
         if ( is_dir($this->path.'/'.$path) ) {
-            return new Directory($path, $this->path);
+            return new Directory($path, $this->path, $this->openDirectory);
         }
 
-        mkdir($path);
+        mkdir($this->path.'/'.$path);
 
-        return new Directory($path, $this->path);
+        return new Directory($path, $this->path, $this->openDirectory);
     }
 
     /**
@@ -153,14 +202,20 @@ class Directory implements DirectoryInterface
     {
         $path = ltrim($this->marshalSubPath($query), '/\\');
 
-        if ( ! is_writeable($path) ) {
+        if ( file_exists($this->path.'/'.$path) && ! is_writable($this->path.'/'.$path) ) {
             throw new FileSystemException(
                 'Unable to create directory, target is not writable: '.ltrim($query, '/\\')
             );
         }
 
+        if ( ! file_exists($this->path.'/'.$path) && ! $this->isWritable() ) {
+            throw new FileSystemException(
+                'Directory is not writable: '.$this->path
+            );
+        }
+
         if ( is_file($this->path.'/'.$path) ) {
-            return new File($path, $this->path);
+            return new File($path, $this);
         }
 
         if ( false !== strpos($path, '/') ) {
@@ -171,7 +226,7 @@ class Directory implements DirectoryInterface
 
         touch($this->path.'/'.$path);
 
-        return new File($path, $this->path);
+        return new File($path, $this);
     }
 
     /**
@@ -218,7 +273,7 @@ class Directory implements DirectoryInterface
             $entity->delete();
         });
 
-        unlink($this->path);
+        rmdir($this->path);
     }
 
     /**

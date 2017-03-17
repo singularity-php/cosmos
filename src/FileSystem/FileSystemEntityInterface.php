@@ -11,7 +11,7 @@
 namespace Singularity\FileSystem;
 
 
-interface FileSystemEntityInterface
+interface FileSystemEntityInterface extends PathAwareInterface
 {
     /**
      * checks whether the file or directory is readable.

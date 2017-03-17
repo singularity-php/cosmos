@@ -47,12 +47,13 @@ interface DirectoryInterface extends FileSystemEntityInterface
     public function isFile(string $query): bool;
 
     /**
-     * enforces the presence of the provided query as a directory.
+     * enforces the presence of the query as a directory when a query is provided. When no query is provided
+     * the parent directory will be returned.
      *
      * @param string $query
      * @return DirectoryInterface
      */
-    public function directory(string $query): DirectoryInterface;
+    public function directory(string $query = null): DirectoryInterface;
 
     /**
      * enforces the presence of the provided query as a file.

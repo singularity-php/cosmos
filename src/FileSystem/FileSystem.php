@@ -47,32 +47,18 @@ class FileSystem implements FileSystemInterface
             );
         }
 
-        $this->workingDirectory = new Directory($name, $baseDirectory);
+        $this->workingDirectory = new Directory($name, $baseDirectory, $previsionedDirectory);
     }
 
     /**
      * returns the file system entity for the provided query.
      *
      * @param string $query
-     * @return FileSystemEntityInterface|null
+     * @return FileSystemEntityInterface|DirectoryInterface|FileInterface|null
      */
     public function find(string $query): ? FileSystemEntityInterface
     {
-        $pattern = $this->buildPattern(ltrim($this->marshalSubPath($query), '/\\'));
-        $result = glob($this->workingDirectory->getPath().'/'.$pattern, GLOB_BRACE);
-
-        if ( empty($result) ) {
-            return null;
-        }
-
-        $directory = dirname($result[0]);
-        $name = basename($result[0]);
-
-        if ( is_dir($result[0]) ) {
-            return new Directory($name, $directory);
-        }
-
-        return new File($name, $directory);
+       return $this->workingDirectory->find($query);
     }
 
     /**
@@ -84,24 +70,7 @@ class FileSystem implements FileSystemInterface
      */
     public function directory(string $query): DirectoryInterface
     {
-        $path = $this->workingDirectory->getPath().'/'.ltrim($this->marshalSubPath($query), '/\\');
-
-        if ( ! is_writeable($path) ) {
-            throw new FileSystemException(
-                'Unable to create directory, target is not writable: '.$path
-            );
-        }
-
-        $baseDirectory = dirname($path);
-        $name = basename($path);
-
-        if ( is_dir($path) ) {
-            return new Directory($name, $baseDirectory);
-        }
-
-        mkdir($path);
-
-        return new Directory($name, $baseDirectory);
+        return $this->workingDirectory->directory($query);
     }
 
     /**
@@ -112,12 +81,6 @@ class FileSystem implements FileSystemInterface
      */
     public function file(string $query): FileInterface
     {
-        if ( false !== strpos('/', $query) ) {
-            $directory = dirname($query);
-            $filename = basename($query);
-            return $this->workingDirectory->directory($directory)->file($filename);
-        }
-
         return $this->workingDirectory->file($query);
     }
 

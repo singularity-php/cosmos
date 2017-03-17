@@ -55,8 +55,9 @@ interface FileInterface extends FileSystemEntityInterface
      *
      * @param DirectoryInterface $directory
      * @param string|null $name
+     * @return FileInterface
      */
-    public function copy(DirectoryInterface $directory, string $name = null): void;
+    public function copy(DirectoryInterface $directory, string $name = null): FileInterface;
 
     /**
      * renames the current file to the provided new name.
@@ -100,13 +101,6 @@ interface FileInterface extends FileSystemEntityInterface
      * @return string
      */
     public function getExtension(): string;
-
-    /**
-     * returns the path to the current file.
-     *
-     * @return string
-     */
-    public function getPath(): string;
 
     /**
      * returns the full pathname to the file.
